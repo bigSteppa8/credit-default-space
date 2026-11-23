@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Credit Card Default Predictor · Logistic Regression</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --ink: #1d2327; --muted: #5f6b73;
+    --line: #dcdad3; --accent: #1f5f8b; --low: #2e7d4f; --mid: #b7791f; --high: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--ink); line-height: 1.45; }
+  header { padding: 28px 24px 8px; max-width: 1180px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 1.6rem; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 820px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 16px 24px 40px;
+         display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .card h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.06em;
+             color: var(--muted); margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 14px; }
+  label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--muted); gap: 4px; }
+  input, select { font: inherit; font-size: 0.95rem; color: var(--ink); padding: 7px 9px;
+                  border: 1px solid var(--line); border-radius: 6px; background: #fff; width: 100%; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .stack > .card + .card { margin-top: 16px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  button { font: inherit; cursor: pointer; border-radius: 6px; padding: 8px 14px; border: 1px solid var(--line);
+           background: #fff; color: var(--ink); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; width: 100%; padding: 11px; }
+  button:hover { filter: brightness(0.96); }
+  aside { position: sticky; top: 16px; }
+  .prob { font-size: 3rem; font-weight: 700; margin: 4px 0 0; font-variant-numeric: tabular-nums; }
+  .verdict { font-weight: 600; margin: 2px 0 14px; }
+  .bar { height: 10px; border-radius: 5px; background: #ebe9e3; overflow: hidden; margin-bottom: 6px; }
+  .bar > div { height: 100%; width: 0; transition: width .3s ease; }
+  .scale { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); }
+  .factors { list-style: none; padding: 0; margin: 10px 0 0; font-size: 0.88rem; }
+  .factors li { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f0eee8; }
+  .up { color: var(--high); } .down { color: var(--low); }
+  .note { font-size: 0.8rem; color: var(--muted); margin-top: 14px; }
+  .error { color: var(--high); font-size: 0.9rem; }
+  footer { max-width: 1180px; margin: 0 auto; padding: 0 24px 32px; font-size: 0.8rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Credit Card Default Predictor</h1>
+  <p>Estimates the probability that a credit card client defaults on next month's payment, using a logistic
+     regression model trained on the UCI “Default of Credit Card Clients” dataset (30,000 Taiwanese clients, April–September 2005).
+     Amounts are in New Taiwan dollars (NT$). The model runs entirely in your browser.</p>
+</header>
+
+<main>
+  <form id="form" class="stack" novalidate>
+    <div class="presets">
+      <button type="button" data-preset="low">Example: low risk</button>
+      <button type="button" data-preset="mid">Example: borderline</button>
+      <button type="button" data-preset="high">Example: high risk</button>
+    </div>
+
+    <section class="card">
+      <h2>Client profile</h2>
+      <div class="grid">
+        <label>Credit limit (NT$)<input type="number" name="LIMIT_BAL" min="0" step="1000" required></label>
+        <label>Age<input type="number" name="AGE" min="18" max="100" required></label>
+        <label>Sex
+          <select name="SEX"><option value="1">Male</option><option value="2">Female</option></select></label>
+        <label>Education
+          <select name="EDUCATION">
+            <option value="1">Graduate school</option><option value="2">University</option>
+            <option value="3">High school</option><option value="4">Other</option>
+            <option value="5">Unknown (5)</option><option value="6">Unknown (6)</option><option value="0">Unknown (0)</option>
+          </select></label>
+        <label>Marital status
+          <select name="MARRIAGE">
+            <option value="1">Married</option><option value="2">Single</option>
+            <option value="3">Other</option><option value="0">Unknown (0)</option>
+          </select></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Repayment status by month</h2>
+      <div class="grid" id="payStatus"></div>
+    </section>
+
+    <section class="card">
+      <h2>Bill statement amount (NT$)</h2>
+      <div class="grid" id="bills"></div>
+    </section>
+
+    <section class="card">
+      <h2>Amount paid (NT$)</h2>
+      <div class="grid" id="payments"></div>
+    </section>
+  </form>
+
+  <aside class="card">
+    <h2>Prediction</h2>
+    <div id="result">
+      <p class="prob" id="prob">–</p>
+      <p class="verdict" id="verdict">Fill in the form or load an example.</p>
+      <div class="bar"><div id="fill"></div></div>
+      <div class="scale"><span>0%</span><span>threshold 50%</span><span>100%</span></div>
+      <h2 style="margin-top:18px">Biggest drivers</h2>
+      <ul class="factors" id="factors"></ul>
+    </div>
+    <button class="primary" type="submit" form="form" style="margin-top:14px">Predict</button>
+    <p class="error" id="error" hidden></p>
+    <p class="note" id="meta">Loading model…</p>
+  </aside>
+</main>
+
+<footer>
+  Coursework demo for AAI6610 (Module 8 logistic regression). Not for real lending decisions: the model is trained on
+  2005 data from one bank, misses about two thirds of actual defaulters at the 50% threshold, and uses sex, age and
+  marital status, which would raise fairness and legal concerns in production.
+</footer>
+
+<script src="predict.js"></script>
+<script>
+(function () {
+  "use strict";
+  const MONTHS = ["September", "August", "July", "June", "May", "April"];
+  const PAY = ["PAY_0", "PAY_2", "PAY_3", "PAY_4", "PAY_5", "PAY_6"];
+  const STATUS = [
+    [-2, "No consumption"], [-1, "Paid in full"], [0, "Revolving credit"],
+    [1, "1 month late"], [2, "2 months late"], [3, "3 months late"], [4, "4 months late"],
+    [5, "5 months late"], [6, "6 months late"], [7, "7 months late"], [8, "8+ months late"],
+  ];
+  const LABELS = { LIMIT_BAL: "Credit limit", AGE: "Age", SEX: "Sex", EDUCATION: "Education", MARRIAGE: "Marital status" };
+  PAY.forEach((p, i) => { LABELS[p] = "Status, " + MONTHS[i]; });
+  for (let i = 1; i <= 6; i++) {
+    LABELS["BILL_AMT" + i] = "Bill, " + MONTHS[i - 1];
+    LABELS["PAY_AMT" + i] = "Paid, " + MONTHS[i - 1];
+  }
+
+  const PRESETS = {
+    low:  {"LIMIT_BAL":170000,"SEX":2,"EDUCATION":2,"MARRIAGE":1,"AGE":48,"PAY_0":-2,"PAY_2":-2,"PAY_3":-1,"PAY_4":-1,"PAY_5":-1,"PAY_6":-1,"BILL_AMT1":18727,"BILL_AMT2":64028,"BILL_AMT3":107946,"BILL_AMT4":13608,"BILL_AMT5":110667,"BILL_AMT6":6878,"PAY_AMT1":66513,"PAY_AMT2":108323,"PAY_AMT3":13608,"PAY_AMT4":112876,"PAY_AMT5":3998,"PAY_AMT6":1118},
+    mid:  {"LIMIT_BAL":50000,"SEX":2,"EDUCATION":2,"MARRIAGE":2,"AGE":23,"PAY_0":1,"PAY_2":2,"PAY_3":2,"PAY_4":0,"PAY_5":0,"PAY_6":2,"BILL_AMT1":42586,"BILL_AMT2":43813,"BILL_AMT3":42779,"BILL_AMT4":38180,"BILL_AMT5":40685,"BILL_AMT6":37662,"PAY_AMT1":2200,"PAY_AMT2":0,"PAY_AMT3":1600,"PAY_AMT4":3300,"PAY_AMT5":0,"PAY_AMT6":1600},
+    high: {"LIMIT_BAL":180000,"SEX":1,"EDUCATION":1,"MARRIAGE":2,"AGE":28,"PAY_0":2,"PAY_2":2,"PAY_3":2,"PAY_4":2,"PAY_5":2,"PAY_6":2,"BILL_AMT1":175154,"BILL_AMT2":175790,"BILL_AMT3":153515,"BILL_AMT4":130864,"BILL_AMT5":131569,"BILL_AMT6":128983,"PAY_AMT1":5100,"PAY_AMT2":50,"PAY_AMT3":14500,"PAY_AMT4":4500,"PAY_AMT5":296,"PAY_AMT6":4500},
+  };
+
+  // Build the month-by-month inputs
+  const payStatus = document.getElementById("payStatus");
+  PAY.forEach((name, i) => {
+    const opts = STATUS.map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
+    payStatus.insertAdjacentHTML("beforeend",
+      `<label>${MONTHS[i]}<select name="${name}">${opts}</select></label>`);
+  });
+  ["bills", "payments"].forEach((id, k) => {
+    const el = document.getElementById(id);
+    for (let i = 1; i <= 6; i++) {
+      const name = (k === 0 ? "BILL_AMT" : "PAY_AMT") + i;
+      el.insertAdjacentHTML("beforeend",
+        `<label>${MONTHS[i - 1]}<input type="number" name="${name}" step="1" required></label>`);
+    }
+  });
+
+  const form = document.getElementById("form");
+  const errorEl = document.getElementById("error");
+  let params = null;
+
+  function load(preset) {
+    for (const [k, v] of Object.entries(preset)) form.elements[k].value = v;
+  }
+
+  function read() {
+    const rec = {};
+    for (const el of form.elements) {
+      if (!el.name) continue;
+      if (el.value === "") throw new Error("Please fill in: " + LABELS[el.name]);
+      rec[el.name] = Number(el.value);
+    }
+    return rec;
+  }
+
+  function fmt(x) { return (x * 100).toFixed(1) + "%"; }
+
+  function render(out) {
+    const p = out.probability;
+    const colour = p >= 0.5 ? "var(--high)" : p >= 0.3 ? "var(--mid)" : "var(--low)";
+    document.getElementById("prob").textContent = fmt(p);
+    document.getElementById("prob").style.color = colour;
+    document.getElementById("verdict").textContent =
+      out.prediction === 1 ? "Predicted: will default next month" : "Predicted: will not default next month";
+    const fill = document.getElementById("fill");
+    fill.style.width = (p * 100).toFixed(1) + "%";
+    fill.style.background = colour;
+
+    const top = Object.entries(out.contributions)
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 5);
+    document.getElementById("factors").innerHTML = top.map(([k, v]) =>
+      `<li><span>${LABELS[k]}</span><span class="${v > 0 ? "up" : "down"}">${v > 0 ? "▲ raises" : "▼ lowers"} risk</span></li>`
+    ).join("");
+  }
+
+  function run() {
+    errorEl.hidden = true;
+    try {
+      render(CreditModel.predict(params, read()));
+    } catch (e) {
+      errorEl.textContent = e.message;
+      errorEl.hidden = false;
+    }
+  }
+
+  document.querySelectorAll("[data-preset]").forEach(btn =>
+    btn.addEventListener("click", () => { load(PRESETS[btn.dataset.preset]); if (params) run(); }));
+  form.addEventListener("submit", e => { e.preventDefault(); if (params) run(); });
+
+  fetch("model.json")
+    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(json => {
+      params = json;
+      document.getElementById("meta").textContent =
+        `Model: logistic regression, test accuracy ${(json.test_accuracy * 100).toFixed(1)}% on 6,000 held-out clients ` +
+        `(scikit-learn ${json.sklearn_version}).`;
+      load(PRESETS.mid);
+      run();
+    })
+    .catch(e => {
+      document.getElementById("meta").textContent = "";
+      errorEl.textContent = "Could not load model.json (" + e.message + ").";
+      errorEl.hidden = false;
+    });
+})();
+</script>
+</body>
+</html>
