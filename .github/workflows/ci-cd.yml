@@ -1,0 +1,62 @@
+name: CI/CD - test and deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # lets you re-run the pipeline by hand from the Actions tab
+  workflow_dispatch:
+
+env:
+  # >>> Change these two lines to your Hugging Face username and Space name <<<
+  HF_USERNAME: mtdonovan20
+  SPACE_NAME: credit-default-predictor
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Re-train model and check it matches model.json (accuracy gate >= 0.80)
+        run: python train.py --check
+
+      - name: Run tests (JavaScript vs scikit-learn parity, Space config, file sizes)
+        run: pytest -v
+
+  deploy:
+    needs: test
+    # only deploy from main, never from pull requests
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for files over 10 MB
+        run: |
+          big=$(find . -path ./.git -prune -o -type f -size +10M -print)
+          if [ -n "$big" ]; then echo "Files over 10 MB need Git LFS/Xet: $big"; exit 1; fi
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then echo "HF_TOKEN secret is not set"; exit 1; fi
+          # --force: the Space starts with its own first commit, which GitHub's history doesn't have
+          git push --force "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${SPACE_NAME}" HEAD:main
